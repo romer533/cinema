@@ -4,27 +4,31 @@ import akka.actor.{ActorSystem, Props}
 import akka.persistence._
 
 case class BuyPlace(placeId: Int)
+case class ReturnPlace(placeId: Int)
 case class BuyPillow(placeId: Int)
 case class BuyPlaid(placeId: Int)
 case class BuyMattress(placeId: Int)
 
+sealed trait BookState
+case class Free() extends BookState
+case class Booked(item: List[String] = List("Pillow", "Plaid", "Mattress")) extends BookState
 
 sealed trait CinemaRoomEvent
 object CinemaRoomEvent {
 
-  case class Booked(placeId: Int) extends CinemaRoomEvent
-  case class Unbooked(placeId: Int) extends CinemaRoomEvent
-  case class AddedItem(placeId: Int, item:  String) extends CinemaRoomEvent
+  case class Booked(placeId: Int, value: Int) extends CinemaRoomEvent
+  case class Unbooked(placeId: Int, value: Int) extends CinemaRoomEvent
+  case class AddedItem(placeId: Int, item:  Int) extends CinemaRoomEvent
 
   def applyEvent(currentState: State, event: CinemaRoomEvent): State = event match {
-    case Booked(placeId) => State(currentState.places + (placeId -> Map("placeId" -> true)))
-    case Unbooked(placeId) => State(currentState.places + (placeId -> Map("placeId" -> false)))
+    case Booked(placeId, value) => State(currentState.places + (placeId -> Map(value -> true)))
+    case Unbooked(placeId, value) => State(currentState.places + (placeId -> Map(value -> false)))
     case AddedItem(placeId, item) => State(currentState.places + (placeId -> Map(item -> true)))
   }
 
 }
 
-case class State(places: Map[Int, Map[String, Boolean]] = Map(0 -> Map("placeId" -> false))) {
+case class State(places: Map[Int, Map[Int, Boolean]] = Map(0 -> Map(0 -> false))) {
 
   def update(event: CinemaRoomEvent): State = event match {
     case booked: Booked => applyEvent(copy(places), booked)
@@ -35,7 +39,7 @@ case class State(places: Map[Int, Map[String, Boolean]] = Map(0 -> Map("placeId"
 }
 
 class CinemaActor extends PersistentActor {
-  override def persistenceId: String = "cinema-id-1"
+  override def persistenceId: String = "cinema-id-2"
 
   var state: State = State()
 
@@ -50,33 +54,41 @@ class CinemaActor extends PersistentActor {
   val snapshotInterval = 100
 
   override def receiveCommand: Receive = {
-    case BuyPlace(placeId) =>
-      println(s"Place $placeId is booked")
-      persist(Booked(placeId)) { event =>
+    case BuyPlace(placeId) if (state.places get placeId) == Some(Map(0 -> false)) =>
+      println(s"Place $placeId is book")
+      persist(Booked(placeId, 0)) { event =>
+        updateState(event)
+        context.system.eventStream.publish(event)
+        if (lastSequenceNr % snapshotInterval == 0 && lastSequenceNr != 0) saveSnapshot(state)
+      }
+    case ReturnPlace(placeId) if state.places.contains(placeId) =>
+      println(s"Place $placeId is free")
+      persist(Unbooked(placeId, 0)) { event =>
         updateState(event)
         context.system.eventStream.publish(event)
         if (lastSequenceNr % snapshotInterval == 0 && lastSequenceNr != 0) saveSnapshot(state)
       }
     case BuyPillow(placeId) =>
       println(s"Buy pillow for $placeId place")
-      persist(AddedItem(placeId, "pillow")) { event =>
+      persist(AddedItem(placeId, 1)) { event =>
         updateState(event)
         context.system.eventStream.publish(event)
         if (lastSequenceNr % snapshotInterval == 0 && lastSequenceNr != 0) saveSnapshot(state)
       }
     case BuyPlaid(placeId) =>
       println(s"Buy plaid for $placeId place")
-      persist(AddedItem(placeId, "plaid")) { event =>
+      persist(AddedItem(placeId, 2)) { event =>
         updateState(event)
         context.system.eventStream.publish(event)
         if (lastSequenceNr % snapshotInterval == 0 && lastSequenceNr != 0) saveSnapshot(state)
       }
     case BuyMattress(placeId) =>
       println(s"Buy mattress for $placeId place")
-      persist(AddedItem(placeId, "mattress")) { event =>
+      persist(AddedItem(placeId, 3)) { event =>
         updateState(event)
         context.system.eventStream.publish(event)
       }
+    case _ => println("Some message")
   }
 }
 
@@ -85,18 +97,12 @@ object Cinema extends App {
   val system = ActorSystem("cinema")
   val cinemaActor = system.actorOf(Props[CinemaActor](), "cinema-1-zone")
 
-  cinemaActor ! BuyPlace(0)
   cinemaActor ! BuyPlace(1)
-  cinemaActor ! BuyPlace(3)
   cinemaActor ! BuyPlace(2)
-  cinemaActor ! BuyPlace(5)
-
-  cinemaActor ! BuyPlaid(3)
-  cinemaActor ! BuyPlaid(1)
-  cinemaActor ! BuyPlaid(0)
-
-  cinemaActor ! BuyPillow(5)
-  cinemaActor ! BuyPillow(2)
+  cinemaActor ! BuyPlace(3)
+  cinemaActor ! BuyPlace(4)
+  cinemaActor ! ReturnPlace(1)
+  cinemaActor ! BuyPlace(1)
 
   Thread.sleep(5000)
   system.terminate()
