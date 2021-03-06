@@ -109,7 +109,7 @@ class CinemaActor(defaultState: State) extends PersistentActor {
         context.system.eventStream.publish(event)
         if (lastSequenceNr % snapshotInterval == 0 && lastSequenceNr != 0) saveSnapshot(state)
       }
-    case _ => println(s"Some message || ${state.places(12)}")
+    case _ => println(s"Some message error")
   }
 }
 
@@ -121,6 +121,14 @@ object Cinema extends App {
   val cinemaActor = system.actorOf(Props(new CinemaActor(defaultState)), name = "cinema-1-zone")
 
   cinemaActor ! BuyPlace(2)
+  cinemaActor ! BuyPlace(2)
+  cinemaActor ! ReturnPlace(2)
+  cinemaActor ! BuyPlace(2)
+  cinemaActor ! BuyPillow(2)
+  cinemaActor ! BuyPillow(2)
+  cinemaActor ! BuyMattress(2)
+  cinemaActor ! BuyPlaid(2)
+  cinemaActor ! BuyMattress(2)
 
   Thread.sleep(1000)
   system.terminate()
